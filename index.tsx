@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
@@ -21,7 +22,8 @@ import {
   FileText,
   UploadCloud,
   Users,
-  RotateCcw
+  RotateCcw,
+  Clock
 } from 'lucide-react';
 
 // --- Types ---
@@ -39,6 +41,7 @@ interface Refueling {
   id: string;
   id_frentista: string;
   data: string; // ISO string
+  hora?: string; // Valor bruto da coluna 10
   bico: string;
   valor: number;
   litros: number;
@@ -71,7 +74,7 @@ const formatNumber = (val: number) =>
 const formatDate = (dateStr: string) => {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return 'Data Inválida';
-  return d.toLocaleDateString('pt-BR', { timeZone: BR_TIMEZONE }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: BR_TIMEZONE });
+  return d.toLocaleDateString('pt-BR', { timeZone: BR_TIMEZONE });
 };
 
 const getDateOnlyString = (isoString: string): string => {
@@ -241,10 +244,14 @@ const App = () => {
         const valorRaw = row.valor || row.total || row.price;
         const litrosRaw = row.litros || row.volume || row.quantidade || row.liters;
 
+        // Captura a coluna 10 (index 9) para o campo de hora
+        const horaRaw = values.length >= 10 ? values[9] : '';
+
         const newItem: Refueling = {
           id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
           id_frentista: String(frentistaId),
           data: parseDateRobust(dateRaw),
+          hora: horaRaw,
           bico: String(bicoRaw),
           valor: parseFloat(String(valorRaw).replace(',', '.') || '0'),
           litros: parseFloat(String(litrosRaw).replace(',', '.') || '0'),
@@ -539,16 +546,28 @@ const App = () => {
                       <table className="w-full text-left">
                         <thead>
                           <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
-                            <th className="px-6 py-4">Data/Hora (Brasília)</th>
-                            <th className="px-6 py-4">Bico</th>
-                            <th className="px-6 py-4">Litros</th>
-                            <th className="px-6 py-4">Valor</th>
+                            <th className="px-6 py-4">data</th>
+                            <th className="px-6 py-4 text-green-600">hora</th>
+                            <th className="px-6 py-4">bico</th>
+                            <th className="px-6 py-4">litros</th>
+                            <th className="px-6 py-4">valor</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {group.items.map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50 text-sm">
-                              <td className="px-6 py-4 flex items-center gap-2"><Calendar size={14} className="text-gray-400" />{formatDate(item.data)}</td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <Calendar size={14} className="text-gray-400" />
+                                  {formatDate(item.data)}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2 text-green-600 font-medium">
+                                  <Clock size={14} className="text-green-500" />
+                                  {item.hora || "--:--"}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
                               <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
                               <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
