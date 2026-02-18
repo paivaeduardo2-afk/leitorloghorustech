@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
@@ -22,7 +21,8 @@ import {
   FileText,
   UploadCloud,
   Users,
-  RotateCcw
+  RotateCcw,
+  Clock
 } from 'lucide-react';
 
 // --- Types ---
@@ -72,7 +72,13 @@ const formatNumber = (val: number) =>
 const formatDate = (dateStr: string) => {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return 'Data Inválida';
-  return d.toLocaleDateString('pt-BR', { timeZone: BR_TIMEZONE }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: BR_TIMEZONE });
+  return d.toLocaleDateString('pt-BR', { timeZone: BR_TIMEZONE });
+};
+
+const formatTime = (dateStr: string) => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '--:--:--';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: BR_TIMEZONE });
 };
 
 const getDateOnlyString = (isoString: string): string => {
@@ -235,9 +241,16 @@ const App = () => {
         const row: any = {};
         headers.forEach((header, index) => { row[header] = values[index]; });
 
+        // User Specified: Column 13 (Index 12) is Frentista ID
         const frentistaId = values.length >= 13 ? values[12] : (row.id_frentista || row.frentista || 'N/A');
         
-        const dateRaw = row.data || row.data_hora || row.date || row.timestamp;
+        // User Specified: Column 10 (Index 9) is Time
+        // Column 1 (Index 0) is usually Date
+        const datePart = values[0] || row.data || "";
+        const timePart = values[9] || "";
+        
+        const combinedDateTime = (datePart && timePart) ? `${datePart} ${timePart}` : datePart;
+        
         const bicoRaw = row.bico || row.id_bico || 'B?';
         const valorRaw = row.valor || row.total || row.price;
         const litrosRaw = row.litros || row.volume || row.quantidade || row.liters;
@@ -245,7 +258,7 @@ const App = () => {
         const newItem: Refueling = {
           id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
           id_frentista: String(frentistaId),
-          data: parseDateRobust(dateRaw),
+          data: parseDateRobust(combinedDateTime),
           bico: String(bicoRaw),
           valor: parseFloat(String(valorRaw).replace(',', '.') || '0'),
           litros: parseFloat(String(litrosRaw).replace(',', '.') || '0'),
@@ -540,7 +553,8 @@ const App = () => {
                       <table className="w-full text-left">
                         <thead>
                           <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
-                            <th className="px-6 py-4">Data/Hora (Brasília)</th>
+                            <th className="px-6 py-4">Data (Brasília)</th>
+                            <th className="px-6 py-4">Hora</th>
                             <th className="px-6 py-4">Bico</th>
                             <th className="px-6 py-4">Litros</th>
                             <th className="px-6 py-4">Valor</th>
@@ -550,6 +564,7 @@ const App = () => {
                           {group.items.map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50 text-sm">
                               <td className="px-6 py-4 flex items-center gap-2"><Calendar size={14} className="text-gray-400" />{formatDate(item.data)}</td>
+                              <td className="px-6 py-4 font-medium flex items-center gap-2"><Clock size={14} className="text-indigo-400" />{formatTime(item.data)}</td>
                               <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
                               <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
                               <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
@@ -579,7 +594,7 @@ const App = () => {
       <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title="Importar Novos Dados">
         <div className="text-center">
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full inline-flex mb-4"><UploadCloud size={40} /></div>
-          <p className="text-gray-600 text-sm mb-6">Selecione o arquivo CSV. O sistema detectará o Frentista na Coluna 13 e tratará datas no formato brasileiro (DD/MM/AAAA).</p>
+          <p className="text-gray-600 text-sm mb-6">Selecione o arquivo CSV. O sistema detectará o Frentista na Coluna 13 e a <strong>Hora na Coluna 10</strong>.</p>
           <div className="mb-6">
             <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
             {!selectedFile ? (
