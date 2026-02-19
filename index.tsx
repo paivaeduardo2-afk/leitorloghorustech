@@ -23,7 +23,9 @@ import {
   UploadCloud,
   Users,
   RotateCcw,
-  Clock
+  Clock,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 // --- Types ---
@@ -86,33 +88,21 @@ const getDateOnlyString = (isoString: string): string => {
   }
 };
 
-/**
- * Parses a date string prioritizing the Brazilian format DD/MM/YYYY.
- * Prevents swapping day and month.
- */
 const parseDateRobust = (dateStr: string): string => {
   if (!dateStr) return new Date().toISOString();
-  
   const s = dateStr.trim();
-  
-  // Tenta o formato DD/MM/AAAA (com ou sem hora)
   const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
-  
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10) - 1; 
     let year = parseInt(dmyMatch[3], 10);
     if (year < 100) year += 2000;
-    
     const hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
     const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
     const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
-    
     const d = new Date(year, month, day, hour, min, sec);
     if (!isNaN(d.getTime())) return d.toISOString();
   }
-
-  // Tenta formato ISO ou similar YYYY-MM-DD
   const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (ymdMatch) {
     const year = parseInt(ymdMatch[1], 10);
@@ -124,7 +114,6 @@ const parseDateRobust = (dateStr: string): string => {
     const d = new Date(year, month, day, hour, min, sec);
     if (!isNaN(d.getTime())) return d.toISOString();
   }
-
   const fallback = new Date(s);
   return isNaN(fallback.getTime()) ? new Date().toISOString() : fallback.toISOString();
 };
@@ -165,23 +154,33 @@ const App = () => {
   const [filterStartDate, setFilterStartDate] = useState(''); 
   const [filterEndDate, setFilterEndDate] = useState('');     
   const [filterBico, setFilterBico] = useState('');
-  const [filterFrentista, setFilterFrentista] = useState('');
+  
+  // Novos estados para o filtro multi-seleção de frentistas
+  const [selectedFrentistas, setSelectedFrentistas] = useState<string[]>([]);
+  const [tempSelectedFrentistas, setTempSelectedFrentistas] = useState<string[]>([]);
+  const [isFrentistaFilterOpen, setIsFrentistaFilterOpen] = useState(false);
+  const frentistaDropdownRef = useRef<HTMLDivElement>(null);
+
   const [sortBy, setSortBy] = useState<'data' | 'bico' | 'valor'>('data');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     const savedData = localStorage.getItem('abastecimentos_data');
     if (savedData) setData(JSON.parse(savedData));
-    
     const savedUser = localStorage.getItem('abastecimentos_user');
     if (savedUser) {
       const parsedUser = JSON.parse(savedUser);
-      if (parsedUser && parsedUser.role === 'admin') {
-        setCurrentUser(parsedUser);
-      } else {
-        localStorage.removeItem('abastecimentos_user');
-      }
+      if (parsedUser && parsedUser.role === 'admin') setCurrentUser(parsedUser);
+      else localStorage.removeItem('abastecimentos_user');
     }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (frentistaDropdownRef.current && !frentistaDropdownRef.current.contains(event.target as Node)) {
+        setIsFrentistaFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -196,7 +195,7 @@ const App = () => {
   const logout = () => {
     setCurrentUser(null);
     setExpandedFrentista(null);
-    setFilterFrentista('');
+    setSelectedFrentistas([]);
     setCurrentPage(1);
   };
 
@@ -204,49 +203,37 @@ const App = () => {
     setFilterStartDate('');
     setFilterEndDate('');
     setFilterBico('');
-    setFilterFrentista('');
+    setSelectedFrentistas([]);
     setSortBy('data');
     setSortOrder('desc');
     setCurrentPage(1);
   };
 
   const hasActiveFilters = useMemo(() => {
-    return filterStartDate !== '' || filterEndDate !== '' || filterBico !== '' || filterFrentista !== '';
-  }, [filterStartDate, filterEndDate, filterBico, filterFrentista]);
+    return filterStartDate !== '' || filterEndDate !== '' || filterBico !== '' || selectedFrentistas.length > 0;
+  }, [filterStartDate, filterEndDate, filterBico, selectedFrentistas]);
 
   const parseCSV = (text: string): Refueling[] => {
     if (!currentUser) return [];
-    
     const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
     if (lines.length < 2) return [];
-
     const firstLine = lines[0];
-    const commaCount = (firstLine.match(/,/g) || []).length;
-    const semiCount = (firstLine.match(/;/g) || []).length;
-    const delimiter = semiCount > commaCount ? ';' : ',';
-
+    const delimiter = firstLine.includes(';') ? ';' : ',';
     const headers = lines[0].toLowerCase().split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
     const result: Refueling[] = [];
-
     for (let i = 1; i < lines.length; i++) {
       try {
         const line = lines[i].trim();
         if (!line) continue;
-
         const values = line.split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
         const row: any = {};
         headers.forEach((header, index) => { row[header] = values[index]; });
-
         const frentistaId = values.length >= 13 ? values[12] : (row.id_frentista || row.frentista || 'N/A');
-        
         const dateRaw = row.data || row.data_hora || row.date || row.timestamp;
         const bicoRaw = row.bico || row.id_bico || 'B?';
         const valorRaw = row.valor || row.total || row.price;
         const litrosRaw = row.litros || row.volume || row.quantidade || row.liters;
-
-        // Captura a coluna 10 (index 9) para o campo de hora
         const horaRaw = values.length >= 10 ? values[9] : '';
-
         const newItem: Refueling = {
           id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
           id_frentista: String(frentistaId),
@@ -257,13 +244,8 @@ const App = () => {
           litros: parseFloat(String(litrosRaw).replace(',', '.') || '0'),
           ownerId: currentUser.id
         };
-
-        if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) {
-          result.push(newItem);
-        }
-      } catch (err) {
-        console.warn(`Erro ao processar linha ${i + 1}:`, err);
-      }
+        if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
+      } catch (err) { console.warn(`Erro ao processar linha ${i + 1}:`, err); }
     }
     return result;
   };
@@ -279,9 +261,7 @@ const App = () => {
           setIsImportModalOpen(false);
           setSelectedFile(null);
           setCurrentPage(1);
-        } else {
-          alert("Não foi possível encontrar dados válidos no arquivo CSV.");
-        }
+        } else alert("Não foi possível encontrar dados válidos no arquivo CSV.");
       };
       reader.readAsText(selectedFile);
     }
@@ -304,8 +284,7 @@ const App = () => {
   const filteredData = useMemo(() => {
     if (!currentUser) return [];
     let result = data;
-
-    if (filterFrentista) result = result.filter(item => item.id_frentista === filterFrentista);
+    if (selectedFrentistas.length > 0) result = result.filter(item => selectedFrentistas.includes(item.id_frentista));
     if (filterStartDate || filterEndDate) {
       result = result.filter(item => {
         const itemDateStr = getDateOnlyString(item.data); 
@@ -315,7 +294,6 @@ const App = () => {
       });
     }
     if (filterBico) result = result.filter(item => item.bico.toLowerCase().includes(filterBico.toLowerCase()));
-
     return [...result].sort((a, b) => {
       let valA: any = a[sortBy];
       let valB: any = b[sortBy];
@@ -327,7 +305,7 @@ const App = () => {
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [data, currentUser, filterStartDate, filterEndDate, filterBico, filterFrentista, sortBy, sortOrder]);
+  }, [data, currentUser, filterStartDate, filterEndDate, filterBico, selectedFrentistas, sortBy, sortOrder]);
 
   const globalStats = useMemo(() => {
     return filteredData.reduce((acc, curr) => ({
@@ -360,6 +338,36 @@ const App = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Funções para controle do filtro multi-seleção
+  const openFrentistaFilter = () => {
+    setTempSelectedFrentistas([...selectedFrentistas]);
+    setIsFrentistaFilterOpen(true);
+  };
+
+  const toggleTempFrentista = (id: string) => {
+    setTempSelectedFrentistas(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (tempSelectedFrentistas.length === uniqueFrentistas.length) {
+      setTempSelectedFrentistas([]);
+    } else {
+      setTempSelectedFrentistas([...uniqueFrentistas]);
+    }
+  };
+
+  const confirmFrentistaSelection = () => {
+    setSelectedFrentistas([...tempSelectedFrentistas]);
+    setIsFrentistaFilterOpen(false);
+    setCurrentPage(1);
+  };
+
+  const cancelFrentistaSelection = () => {
+    setIsFrentistaFilterOpen(false);
+  };
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
@@ -373,11 +381,7 @@ const App = () => {
           </div>
           <div className="space-y-4">
             {MOCK_USERS.map(user => (
-              <button
-                key={user.id}
-                onClick={() => login(user)}
-                className="w-full group flex items-center p-4 bg-gray-50 hover:bg-indigo-600 hover:text-white rounded-2xl transition-all duration-300 border border-gray-100 hover:border-indigo-400 text-left"
-              >
+              <button key={user.id} onClick={() => login(user)} className="w-full group flex items-center p-4 bg-gray-50 hover:bg-indigo-600 hover:text-white rounded-2xl transition-all duration-300 border border-gray-100 hover:border-indigo-400 text-left">
                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-indigo-600 group-hover:text-indigo-400 mr-4 shadow-sm">
                   <User size={24} />
                 </div>
@@ -469,41 +473,99 @@ const App = () => {
             )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500">Frentista (Cartão)</label>
-              <div className="relative">
-                <Users size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <select value={filterFrentista} onChange={(e) => { setFilterFrentista(e.target.value); setCurrentPage(1); }} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none">
-                  <option value="">Todos</option>
-                  {uniqueFrentistas.map(fId => <option key={fId} value={fId}>{fId}</option>)}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              </div>
+            
+            {/* Filtro Multi-seleção Frentista */}
+            <div className="flex flex-col gap-1.5 relative" ref={frentistaDropdownRef}>
+              <label className="text-xs font-bold text-gray-500">Cartão do Frentista</label>
+              <button 
+                onClick={openFrentistaFilter}
+                className="w-full flex items-center justify-between pl-3 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm hover:border-indigo-300 transition-colors"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Users size={16} className="text-gray-400 flex-shrink-0" />
+                  <span className="truncate">
+                    {selectedFrentistas.length === 0 ? "Todos" : 
+                     selectedFrentistas.length === uniqueFrentistas.length ? "Todos Selecionados" : 
+                     `${selectedFrentistas.length} Selecionado(s)`}
+                  </span>
+                </div>
+                <ChevronDown size={14} className={`text-gray-400 transition-transform ${isFrentistaFilterOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isFrentistaFilterOpen && (
+                <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 p-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                    {/* Opção Selecionar Tudo */}
+                    <div 
+                      onClick={toggleSelectAll}
+                      className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border-b border-gray-100 mb-1"
+                    >
+                      {tempSelectedFrentistas.length === uniqueFrentistas.length ? 
+                        <CheckSquare size={18} className="text-indigo-600" /> : 
+                        <Square size={18} className="text-gray-300" />
+                      }
+                      <span className="text-sm font-bold text-gray-700">(Selecionar Tudo)</span>
+                    </div>
+
+                    {uniqueFrentistas.length === 0 && <p className="text-center text-xs py-4 text-gray-400 italic">Nenhum frentista carregado</p>}
+
+                    {uniqueFrentistas.map(fId => (
+                      <div 
+                        key={fId} 
+                        onClick={() => toggleTempFrentista(fId)}
+                        className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                      >
+                        {tempSelectedFrentistas.includes(fId) ? 
+                          <CheckSquare size={18} className="text-indigo-600" /> : 
+                          <Square size={18} className="text-gray-300" />
+                        }
+                        <span className="text-sm font-medium text-gray-600 truncate">{fId}</span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
+                    <button 
+                      onClick={confirmFrentistaSelection}
+                      className="flex-1 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
+                    >
+                      OK
+                    </button>
+                    <button 
+                      onClick={cancelFrentistaSelection}
+                      className="flex-1 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500">Início</label>
-              <input type="date" value={filterStartDate} onChange={(e) => { setFilterStartDate(e.target.value); setCurrentPage(1); }} className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm" />
+              <input type="date" value={filterStartDate} onChange={(e) => { setFilterStartDate(e.target.value); setCurrentPage(1); }} className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500">Fim</label>
-              <input type="date" value={filterEndDate} onChange={(e) => { setFilterEndDate(e.target.value); setCurrentPage(1); }} className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm" />
+              <input type="date" value={filterEndDate} onChange={(e) => { setFilterEndDate(e.target.value); setCurrentPage(1); }} className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500">Bico</label>
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Ex: B1" value={filterBico} onChange={(e) => { setFilterBico(e.target.value); setCurrentPage(1); }} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm" />
+                <input type="text" placeholder="Ex: B1" value={filterBico} onChange={(e) => { setFilterBico(e.target.value); setCurrentPage(1); }} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500">Ordenar</label>
               <div className="flex gap-2">
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none">
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
                   <option value="data">Data</option>
                   <option value="bico">Bico</option>
                   <option value="valor">Valor</option>
                 </select>
-                <button onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')} className="p-2 bg-gray-50 border border-gray-200 rounded-xl">
+                <button onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')} className="p-2 bg-gray-50 border border-gray-200 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
                   {sortOrder === 'asc' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </button>
               </div>
@@ -519,10 +581,10 @@ const App = () => {
             </div>
           ) : (
             paginatedFrentistas.map(([frentistaId, group]) => (
-              <div key={frentistaId} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div key={frentistaId} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
                 <div onClick={() => setExpandedFrentista(expandedFrentista === frentistaId ? null : frentistaId)} className="p-5 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-4 min-w-[200px]">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 font-black">{frentistaId.slice(-2)}</div>
+                    <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 font-black shadow-inner">{frentistaId.slice(-2)}</div>
                     <div>
                       <h3 className="text-lg font-black text-gray-800">Frentista: {frentistaId}</h3>
                       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">{group.count} registros</p>
@@ -541,8 +603,8 @@ const App = () => {
                   <div className={`transition-transform duration-300 ${expandedFrentista === frentistaId ? 'rotate-180' : ''}`}><ChevronDown size={24} className="text-gray-400" /></div>
                 </div>
                 {expandedFrentista === frentistaId && (
-                  <div className="border-t border-gray-100 bg-gray-50/50 p-6">
-                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <div className="border-t border-gray-100 bg-gray-50/50 p-6 animate-in slide-in-from-top-2 duration-200">
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
                       <table className="w-full text-left">
                         <thead>
                           <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
@@ -555,7 +617,7 @@ const App = () => {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {group.items.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50 text-sm">
+                            <tr key={item.id} className="hover:bg-gray-50 text-sm transition-colors">
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-2">
                                   <Calendar size={14} className="text-gray-400" />
@@ -584,11 +646,11 @@ const App = () => {
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-gray-100 mb-8">
              <p className="text-sm text-gray-700 hidden sm:block">Página <span className="font-bold">{currentPage}</span> de <span className="font-bold">{totalPages}</span></p>
              <div className="flex gap-2">
-                <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 border rounded-xl disabled:opacity-50"><ChevronLeft size={20}/></button>
-                <button disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)} className="p-2 border rounded-xl disabled:opacity-50"><ChevronRight size={20}/></button>
+                <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronLeft size={20}/></button>
+                <button disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronRight size={20}/></button>
              </div>
           </div>
         )}
@@ -597,32 +659,39 @@ const App = () => {
       <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title="Importar Novos Dados">
         <div className="text-center">
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full inline-flex mb-4"><UploadCloud size={40} /></div>
-          <p className="text-gray-600 text-sm mb-6">Selecione o arquivo CSV. O sistema detectará o Frentista na Coluna 13 e tratará datas no formato brasileiro (DD/MM/AAAA).</p>
+          <p className="text-gray-600 text-sm mb-6 leading-relaxed">Selecione o arquivo CSV. O sistema detectará o Frentista na Coluna 13 e tratará datas no formato brasileiro (DD/MM/AAAA).</p>
           <div className="mb-6">
             <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
             {!selectedFile ? (
-              <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-2xl hover:border-indigo-400 text-gray-500 font-bold"><Plus size={20} />Escolher Arquivo</button>
+              <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-2xl hover:border-indigo-400 hover:bg-indigo-50/30 text-gray-500 font-bold transition-all"><Plus size={20} />Escolher Arquivo</button>
             ) : (
               <div className="flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
                 <span className="text-sm font-bold truncate max-w-[200px]">{selectedFile.name}</span>
-                <button onClick={() => setSelectedFile(null)}><X size={16} className="text-indigo-600" /></button>
+                <button onClick={() => setSelectedFile(null)} className="p-1 hover:bg-indigo-100 rounded-full transition-colors"><X size={16} className="text-indigo-600" /></button>
               </div>
             )}
           </div>
-          <button disabled={!selectedFile} onClick={handleImport} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">Confirmar Importação</button>
+          <button disabled={!selectedFile} onClick={handleImport} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 disabled:opacity-50 hover:bg-indigo-700 transition-all">Confirmar Importação</button>
         </div>
       </Modal>
 
       <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Limpar Tudo">
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-red-50 text-red-700 rounded-xl border border-red-100">
-            <AlertTriangle size={32} />
+            <div className="flex-shrink-0"><AlertTriangle size={32} /></div>
             <p className="text-sm font-medium">Isso removerá todos os dados do sistema. Esta ação é irreversível.</p>
           </div>
-          <input type="text" placeholder="Digite EXCLUIR" value={confirmDeleteText} onChange={(e) => setConfirmDeleteText(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border rounded-xl uppercase font-bold" />
-          <button disabled={confirmDeleteText.toLowerCase() !== 'excluir'} onClick={bulkDelete} className="w-full py-3 bg-red-600 text-white rounded-xl font-black disabled:opacity-50">EXCLUIR TUDO</button>
+          <input type="text" placeholder="Digite EXCLUIR" value={confirmDeleteText} onChange={(e) => setConfirmDeleteText(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl uppercase font-bold focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" />
+          <button disabled={confirmDeleteText.toLowerCase() !== 'excluir'} onClick={bulkDelete} className="w-full py-3 bg-red-600 text-white rounded-xl font-black disabled:opacity-50 hover:bg-red-700 shadow-lg shadow-red-100 transition-all">EXCLUIR TUDO</button>
         </div>
       </Modal>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+      `}</style>
     </div>
   );
 };
