@@ -173,6 +173,7 @@ const App = () => {
   const [filterEndDate, setFilterEndDate] = useState('');     
   const [filterBico, setFilterBico] = useState('');
   
+  // Agora armazena NOMES dos frentistas (displayName) para filtrar todos os cartões vinculados
   const [selectedFrentistas, setSelectedFrentistas] = useState<string[]>([]);
   const [tempSelectedFrentistas, setTempSelectedFrentistas] = useState<string[]>([]);
   const [isFrentistaFilterOpen, setIsFrentistaFilterOpen] = useState(false);
@@ -245,6 +246,16 @@ const App = () => {
     return map;
   }, [employees]);
 
+  // Mapa reverso: Nome -> Lista de Cartões
+  const nameToCardsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    employees.forEach(e => {
+      if (!map[e.nome]) map[e.nome] = [];
+      if (!map[e.nome].includes(e.id_cartao)) map[e.nome].push(e.id_cartao);
+    });
+    return map;
+  }, [employees]);
+
   const parseCSV = (text: string, type: 'refueling' | 'employees'): any[] => {
     if (!currentUser) return [];
     // Remove BOM if exists
@@ -284,7 +295,6 @@ const App = () => {
           };
           if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
         } else {
-          // Processamento de funcionários baseado nas colunas fornecidas: NOME;APELIDO;ID_CARTAO_ABAST;ID_CARTAO_ABAST_2;ID_CARTAO_ABAST_3
           const nome = values[0] || row.nome;
           const cartao1 = (values[2] || row.id_cartao_abast || "").trim();
           const cartao2 = (values[3] || row.id_cartao_abast_2 || "").trim();
@@ -342,15 +352,29 @@ const App = () => {
     }
   };
 
-  const uniqueFrentistas = useMemo(() => {
+  // Lista de Nomes Únicos (displayName) para o Filtro
+  const filterOptions = useMemo(() => {
     if (!currentUser) return [];
-    return Array.from(new Set(data.map(item => item.id_frentista))).sort();
-  }, [data, currentUser]);
+    const namesSet = new Set<string>();
+    data.forEach(item => {
+      const name = employeeMap[item.id_frentista] || item.id_frentista;
+      namesSet.add(name);
+    });
+    return Array.from(namesSet).sort();
+  }, [data, employeeMap, currentUser]);
 
   const filteredData = useMemo(() => {
     if (!currentUser) return [];
     let result = data;
-    if (selectedFrentistas.length > 0) result = result.filter(item => selectedFrentistas.includes(item.id_frentista));
+    
+    // Filtragem baseada no Nome selecionado
+    if (selectedFrentistas.length > 0) {
+      result = result.filter(item => {
+        const name = employeeMap[item.id_frentista] || item.id_frentista;
+        return selectedFrentistas.includes(name);
+      });
+    }
+
     if (filterStartDate || filterEndDate) {
       result = result.filter(item => {
         const itemDateStr = getDateOnlyString(item.data); 
@@ -371,7 +395,7 @@ const App = () => {
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [data, currentUser, filterStartDate, filterEndDate, filterBico, selectedFrentistas, sortBy, sortOrder]);
+  }, [data, currentUser, filterStartDate, filterEndDate, filterBico, selectedFrentistas, sortBy, sortOrder, employeeMap]);
 
   const globalStats = useMemo(() => {
     return filteredData.reduce((acc, curr) => ({
@@ -424,17 +448,17 @@ const App = () => {
     setIsFrentistaFilterOpen(true);
   };
 
-  const toggleTempFrentista = (id: string) => {
+  const toggleTempFrentista = (name: string) => {
     setTempSelectedFrentistas(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+      prev.includes(name) ? prev.filter(i => i !== name) : [...prev, name]
     );
   };
 
   const toggleSelectAll = () => {
-    if (tempSelectedFrentistas.length === uniqueFrentistas.length) {
+    if (tempSelectedFrentistas.length === filterOptions.length) {
       setTempSelectedFrentistas([]);
     } else {
-      setTempSelectedFrentistas([...uniqueFrentistas]);
+      setTempSelectedFrentistas([...filterOptions]);
     }
   };
 
@@ -566,7 +590,7 @@ const App = () => {
                   <CreditCard size={16} className="text-gray-400 flex-shrink-0" />
                   <span className="truncate">
                     {selectedFrentistas.length === 0 ? "Todos" : 
-                     selectedFrentistas.length === uniqueFrentistas.length ? "Todos Selecionados" : 
+                     selectedFrentistas.length === filterOptions.length ? "Todos Selecionados" : 
                      `${selectedFrentistas.length} Selecionado(s)`}
                   </span>
                 </div>
@@ -580,26 +604,30 @@ const App = () => {
                       onClick={toggleSelectAll}
                       className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border-b border-gray-100 mb-1"
                     >
-                      {tempSelectedFrentistas.length === uniqueFrentistas.length ? 
+                      {tempSelectedFrentistas.length === filterOptions.length ? 
                         <CheckSquare size={18} className="text-indigo-600" /> : 
                         <Square size={18} className="text-gray-300" />
                       }
                       <span className="text-sm font-bold text-gray-700">(Selecionar Tudo)</span>
                     </div>
 
-                    {uniqueFrentistas.map(fId => (
+                    {filterOptions.map(name => (
                       <div 
-                        key={fId} 
-                        onClick={() => toggleTempFrentista(fId)}
+                        key={name} 
+                        onClick={() => toggleTempFrentista(name)}
                         className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
                       >
-                        {tempSelectedFrentistas.includes(fId) ? 
+                        {tempSelectedFrentistas.includes(name) ? 
                           <CheckSquare size={18} className="text-indigo-600" /> : 
                           <Square size={18} className="text-gray-300" />
                         }
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-gray-800 truncate">{employeeMap[fId] || "Desconhecido"}</span>
-                          <span className="text-[10px] text-gray-400 truncate uppercase tracking-tighter">{fId}</span>
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="text-xs font-bold text-gray-800 truncate">{name}</span>
+                          {nameToCardsMap[name] && (
+                            <span className="text-[9px] text-gray-400 truncate uppercase tracking-tighter">
+                              {nameToCardsMap[name].length} cartão(ões)
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
