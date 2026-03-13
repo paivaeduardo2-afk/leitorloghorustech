@@ -774,9 +774,9 @@ const App = () => {
                               <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
                               <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
                               <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
-                              <td className="px-6 py-4 text-[10px] text-gray-500 font-mono">{formatNumber(item.enc_inicial || 0)}</td>
-                              <td className="px-6 py-4 text-[10px] text-gray-500 font-mono">{formatNumber(item.enc_final || 0)}</td>
-                              <td className="px-6 py-4 text-[10px] text-gray-400 font-mono">{item.id_frentista}</td>
+                              <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_inicial || 0)}</td>
+                              <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_final || 0)}</td>
+                              <td className="px-6 py-4 text-gray-400">{item.id_frentista}</td>
                             </tr>
                           ))}
                         </tbody>
