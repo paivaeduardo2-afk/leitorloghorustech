@@ -290,10 +290,9 @@ const App = () => {
           // Coluna 7 (index 6): Valor Total
           // Coluna 11 (index 10): Encerrante Inicial
           // Coluna 12 (index 11): Encerrante Final
-          
-          let precoUnitario = parseFloat(String(values[4] || row.preco_unitario || row.unit_price || '0').replace(',', '.'));
+          let precoUnitario = parseFloat(String(values[4] || row.preco_unitario || row.unit_price || row.preço || '0').replace(',', '.'));
           let volume = parseFloat(String(values[5] || row.litros || row.volume || row.quantidade || row.liters || '0').replace(',', '.'));
-          let valorTotal = parseFloat(String(values[6] || row.valor || row.total || row.price || '0').replace(',', '.'));
+          let valorTotal = parseFloat(String(values[6] || row.valor || row.total || row.price || row.valor_total || '0').replace(',', '.'));
           let encInicial = parseFloat(String(values[10] || row.enc_inicial || row.initial_reading || '0').replace(',', '.'));
           let encFinal = parseFloat(String(values[11] || row.enc_final || row.final_reading || '0').replace(',', '.'));
 
@@ -307,6 +306,11 @@ const App = () => {
             valorTotal = volume * precoUnitario;
           }
           
+          // Caso o preço unitário esteja zerado mas tenhamos valor e volume, podemos inferir
+          if (precoUnitario === 0 && volume > 0 && valorTotal > 0) {
+            precoUnitario = valorTotal / volume;
+          }
+
           // Caso o volume ainda seja 0 mas tenhamos valor e preço, podemos inferir
           if (volume === 0 && valorTotal > 0 && precoUnitario > 0) {
             volume = valorTotal / precoUnitario;
@@ -776,8 +780,8 @@ const App = () => {
                               </td>
                               <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
                               <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
-                              <td className="px-6 py-4">{formatCurrency(item.valor)}</td>
-                              <td className="px-6 py-4 font-black">{formatCurrency(item.preco_unitario || 0)}</td>
+                              <td className="px-6 py-4">{formatCurrency(item.preco_unitario || 0)}</td>
+                              <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
                               <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_inicial || 0)}</td>
                               <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_final || 0)}</td>
                               <td className="px-6 py-4 text-gray-400">{item.id_frentista}</td>
