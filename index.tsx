@@ -280,8 +280,35 @@ const App = () => {
           const frentistaId = values.length >= 13 ? values[12] : (row.id_frentista || row.frentista || 'N/A');
           const dateRaw = row.data || row.data_hora || row.date || row.timestamp;
           const bicoRaw = row.bico || row.id_bico || 'B?';
-          const valorRaw = row.valor || row.total || row.price;
-          const litrosRaw = row.litros || row.volume || row.quantidade || row.liters;
+          
+          // Extração baseada em índices (1-based para o usuário, 0-based para o código)
+          // Coluna 5 (index 4): Preço Unitário
+          // Coluna 6 (index 5): Volume (Litros)
+          // Coluna 7 (index 6): Valor Total
+          // Coluna 8 (index 7): Encerrante Inicial
+          // Coluna 9 (index 8): Encerrante Final
+          
+          let precoUnitario = parseFloat(String(values[4] || row.preco_unitario || row.unit_price || '0').replace(',', '.'));
+          let volume = parseFloat(String(values[5] || row.litros || row.volume || row.quantidade || row.liters || '0').replace(',', '.'));
+          let valorTotal = parseFloat(String(values[6] || row.valor || row.total || row.price || '0').replace(',', '.'));
+          let encInicial = parseFloat(String(values[7] || row.enc_inicial || row.initial_reading || '0').replace(',', '.'));
+          let encFinal = parseFloat(String(values[8] || row.enc_final || row.final_reading || '0').replace(',', '.'));
+
+          // Lógica solicitada: Se volume (coluna 6) estiver zerado, calcular: Enc. Final - Enc. Inicial
+          if (volume === 0 && encFinal > 0 && encInicial > 0) {
+            volume = encFinal - encInicial;
+          }
+
+          // Lógica solicitada: Se valor total (coluna 7) estiver zerado, calcular: Volume * Preço Unitário
+          if (valorTotal === 0 && volume > 0 && precoUnitario > 0) {
+            valorTotal = volume * precoUnitario;
+          }
+          
+          // Caso o volume ainda seja 0 mas tenhamos valor e preço, podemos inferir
+          if (volume === 0 && valorTotal > 0 && precoUnitario > 0) {
+            volume = valorTotal / precoUnitario;
+          }
+
           const horaRaw = values.length >= 10 ? values[9] : '';
           const newItem: Refueling = {
             id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
@@ -289,8 +316,8 @@ const App = () => {
             data: parseDateRobust(dateRaw),
             hora: horaRaw,
             bico: String(bicoRaw),
-            valor: parseFloat(String(valorRaw).replace(',', '.') || '0'),
-            litros: parseFloat(String(litrosRaw).replace(',', '.') || '0'),
+            valor: valorTotal,
+            litros: volume,
             ownerId: currentUser.id
           };
           if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
