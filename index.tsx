@@ -285,14 +285,14 @@ const App = () => {
           const bicoRaw = row.bico || row.id_bico || 'B?';
           
           // Extração baseada em índices (1-based para o usuário, 0-based para o código)
-          // Coluna 5 (index 4): Preço Unitário
+          // Coluna 7 (index 6): Preço Unitário (Preço de Venda)
           // Coluna 6 (index 5): Volume (Litros)
-          // Coluna 7 (index 6): Valor Total
+          // Coluna 5 (index 4): Valor Total (Total de Vendas)
           // Coluna 11 (index 10): Encerrante Inicial
           // Coluna 12 (index 11): Encerrante Final
-          let precoUnitario = parseFloat(String(values[4] || row.preco_unitario || row.unit_price || row.preço || '0').replace(',', '.'));
+          let precoUnitario = parseFloat(String(values[6] || row.preco_unitario || row.unit_price || row.preço || '0').replace(',', '.'));
           let volume = parseFloat(String(values[5] || row.litros || row.volume || row.quantidade || row.liters || '0').replace(',', '.'));
-          let valorTotal = parseFloat(String(values[6] || row.valor || row.total || row.price || row.valor_total || '0').replace(',', '.'));
+          let valorTotal = parseFloat(String(values[4] || row.valor || row.total || row.price || row.valor_total || '0').replace(',', '.'));
           let encInicial = parseFloat(String(values[10] || row.enc_inicial || row.initial_reading || '0').replace(',', '.'));
           let encFinal = parseFloat(String(values[11] || row.enc_final || row.final_reading || '0').replace(',', '.'));
 
