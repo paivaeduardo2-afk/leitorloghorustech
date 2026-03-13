@@ -47,8 +47,9 @@ interface Refueling {
   data: string; // ISO string
   hora?: string; // Valor bruto da coluna 10
   bico: string;
-  valor: number;
+  valor: number; // Valor Total
   litros: number;
+  preco_unitario?: number;
   enc_inicial?: number;
   enc_final?: number;
   ownerId: string;
@@ -320,6 +321,7 @@ const App = () => {
             bico: String(bicoRaw),
             valor: valorTotal,
             litros: volume,
+            preco_unitario: precoUnitario,
             enc_inicial: encInicial,
             enc_final: encFinal,
             ownerId: currentUser.id
@@ -586,7 +588,7 @@ const App = () => {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
             <div className="p-3 bg-green-50 text-green-600 rounded-xl"><DollarSign size={24} /></div>
             <div>
-              <p className="text-sm text-gray-500 font-medium">Valor Total</p>
+              <p className="text-sm text-gray-500 font-medium">Preço Total</p>
               <p className="text-2xl font-black">{formatCurrency(globalStats.totalValue)}</p>
             </div>
           </div>
@@ -692,7 +694,7 @@ const App = () => {
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none focus:border-indigo-500 outline-none">
                   <option value="data">Data</option>
                   <option value="bico">Bico</option>
-                  <option value="valor">Valor</option>
+                  <option value="valor">Preço</option>
                 </select>
                 <button onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')} className="p-2 bg-gray-50 border border-gray-200 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
                   {sortOrder === 'asc' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -750,7 +752,8 @@ const App = () => {
                             <th className="px-6 py-4 text-green-600">hora</th>
                             <th className="px-6 py-4">bico</th>
                             <th className="px-6 py-4">litros</th>
-                            <th className="px-6 py-4">valor</th>
+                            <th className="px-6 py-4">preço</th>
+                            <th className="px-6 py-4">valor total</th>
                             <th className="px-6 py-4 text-gray-400">Enc. Inicial</th>
                             <th className="px-6 py-4 text-gray-400">Enc. Final</th>
                             <th className="px-6 py-4 text-gray-400">cartão</th>
@@ -773,7 +776,8 @@ const App = () => {
                               </td>
                               <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
                               <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
-                              <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
+                              <td className="px-6 py-4">{formatCurrency(item.valor)}</td>
+                              <td className="px-6 py-4 font-black">{formatCurrency(item.preco_unitario || 0)}</td>
                               <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_inicial || 0)}</td>
                               <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_final || 0)}</td>
                               <td className="px-6 py-4 text-gray-400">{item.id_frentista}</td>
