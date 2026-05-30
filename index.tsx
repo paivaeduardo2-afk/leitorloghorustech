@@ -163,6 +163,7 @@ const App = () => {
   const [data, setData] = useState<Refueling[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [expandedFrentista, setExpandedFrentista] = useState<string | null>(null);
+  const [expandedBico, setExpandedBico] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importType, setImportType] = useState<'refueling' | 'employees'>('refueling');
@@ -184,6 +185,7 @@ const App = () => {
 
   const [sortBy, setSortBy] = useState<'data' | 'bico' | 'valor'>('data');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos'>('frentistas');
 
   useEffect(() => {
     const savedData = localStorage.getItem('abastecimentos_data');
@@ -420,8 +422,13 @@ const App = () => {
         return true;
       });
     }
-    if (filterBico) result = result.filter(item => item.bico.toLowerCase().includes(filterBico.toLowerCase()));
+    if (filterBico) {
+      result = result.filter(item => item.bico.trim().toLowerCase() === filterBico.trim().toLowerCase());
+    }
     return [...result].sort((a, b) => {
+      if (sortBy === 'bico') {
+        return a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' }) * (sortOrder === 'asc' ? 1 : -1);
+      }
       let valA: any = a[sortBy];
       let valB: any = b[sortBy];
       if (sortBy === 'data') {
@@ -470,6 +477,69 @@ const App = () => {
     
     return groups;
   }, [filteredData, employeeMap]);
+
+  const groupedByBico = useMemo(() => {
+    const groups: Record<string, { bico: string; totalLiters: number; totalValue: number; count: number; items: Refueling[] }> = {};
+    
+    filteredData.forEach(item => {
+      const bico = item.bico;
+      if (!groups[bico]) {
+        groups[bico] = { bico, totalLiters: 0, totalValue: 0, count: 0, items: [] };
+      }
+      groups[bico].totalLiters += item.litros;
+      groups[bico].totalValue += item.valor;
+      groups[bico].count += 1;
+      groups[bico].items.push(item);
+    });
+    
+    Object.keys(groups).forEach(b => {
+      groups[b].items.sort((x, y) => new Date(y.data).getTime() - new Date(x.data).getTime());
+    });
+    
+    return Object.values(groups).sort((a, b) => a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [filteredData]);
+
+  const readingsMismatch = useMemo(() => {
+    const bicoGroups: Record<string, Refueling[]> = {};
+    data.forEach(item => {
+      const b = item.bico;
+      if (!bicoGroups[b]) bicoGroups[b] = [];
+      bicoGroups[b].push(item);
+    });
+
+    const finalMismatchedIds = new Set<string>();
+    const inicialMismatchedIds = new Set<string>();
+
+    Object.keys(bicoGroups).forEach(b => {
+      const items = bicoGroups[b];
+      // Ordenar cronologicamente em ordem crescente (mais antigo pro mais novo)
+      const sorted = [...items].sort((x, y) => {
+        const timeX = new Date(x.data).getTime();
+        const timeY = new Date(y.data).getTime();
+        if (timeX !== timeY) return timeX - timeY;
+        const horaX = x.hora || '';
+        const horaY = y.hora || '';
+        return horaX.localeCompare(horaY);
+      });
+
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const current = sorted[i];
+        const next = sorted[i + 1];
+        const valFinal = current.enc_final || 0;
+        const valInicial = next.enc_inicial || 0;
+
+        if (valFinal !== valInicial) {
+          finalMismatchedIds.add(current.id);
+          inicialMismatchedIds.add(next.id);
+        }
+      }
+    });
+
+    return {
+      finalMismatchedIds,
+      inicialMismatchedIds
+    };
+  }, [data]);
 
   const employeeEntries = (Object.entries(groupedByEmployee) as [string, FrentistaGroup][]);
   const totalPages = Math.ceil(employeeEntries.length / itemsPerPage);
@@ -605,6 +675,32 @@ const App = () => {
           </div>
         </div>
 
+        {/* Seletor de Abas */}
+        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 mb-8 max-w-md gap-1">
+          <button 
+            onClick={() => setActiveTab('frentistas')} 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'frentistas' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
+            }`}
+          >
+            <Users size={16} />
+            Abas por Frentista
+          </button>
+          <button 
+            onClick={() => setActiveTab('bicos')} 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'bicos' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
+            }`}
+          >
+            <Fuel size={16} />
+            Vendas por Bico
+          </button>
+        </div>
+
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-gray-800 font-bold uppercase text-xs tracking-widest">
@@ -695,7 +791,14 @@ const App = () => {
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500">Ordenar</label>
               <div className="flex gap-2">
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none focus:border-indigo-500 outline-none">
+                <select value={sortBy} onChange={(e) => {
+                  const newSortBy = e.target.value as any;
+                  setSortBy(newSortBy);
+                  if (newSortBy === 'bico') {
+                    setSortOrder('asc');
+                  }
+                  setCurrentPage(1);
+                }} className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm appearance-none focus:border-indigo-500 outline-none">
                   <option value="data">Data</option>
                   <option value="bico">Bico</option>
                   <option value="valor">Preço</option>
@@ -708,102 +811,221 @@ const App = () => {
           </div>
         </div>
 
-        <div className="space-y-4 mb-8">
-          {paginatedEmployees.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
-              <h3 className="text-lg font-bold text-gray-800">Nenhum dado encontrado</h3>
-              <p className="text-gray-500 mt-1">Tente importar abastecimentos ou funcionários.</p>
-            </div>
-          ) : (
-            paginatedEmployees.map(([empName, group]) => (
-              <div key={empName} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
-                <div onClick={() => setExpandedFrentista(expandedFrentista === empName ? null : empName)} className="p-5 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4 min-w-[250px]">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 font-black shadow-inner uppercase">
-                      {getInitials(group.displayName)}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-gray-800 uppercase leading-tight">{group.displayName}</h3>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {group.cardIds.map(id => (
-                          <span key={id} className="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-tighter">
-                            {id}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest mt-1 opacity-70">{group.count} registros</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-8 flex-1 justify-end mr-4">
-                    <div className="hidden sm:block">
-                      <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Litros</p>
-                      <p className="font-black text-gray-700">{formatNumber(group.totalLiters)} L</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Total</p>
-                      <p className="font-black text-indigo-600 text-lg">{formatCurrency(group.totalValue)}</p>
-                    </div>
-                  </div>
-                  <div className={`transition-transform duration-300 ${expandedFrentista === empName ? 'rotate-180' : ''}`}><ChevronDown size={24} className="text-gray-400" /></div>
+        {activeTab === 'frentistas' ? (
+          <>
+            <div className="space-y-4 mb-8">
+              {paginatedEmployees.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-800">Nenhum dado encontrado</h3>
+                  <p className="text-gray-500 mt-1">Tente importar abastecimentos ou funcionários.</p>
                 </div>
-                {expandedFrentista === empName && (
-                  <div className="border-t border-gray-100 bg-gray-50/50 p-6 animate-in slide-in-from-top-2 duration-200">
-                    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-                      <table className="w-full text-left">
-                        <thead>
-                          <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
-                            <th className="px-6 py-4">data</th>
-                            <th className="px-6 py-4 text-green-600">hora</th>
-                            <th className="px-6 py-4">bico</th>
-                            <th className="px-6 py-4">litros</th>
-                            <th className="px-6 py-4">preço</th>
-                            <th className="px-6 py-4">valor total</th>
-                            <th className="px-6 py-4 text-gray-400">Enc. Inicial</th>
-                            <th className="px-6 py-4 text-gray-400">Enc. Final</th>
-                            <th className="px-6 py-4 text-gray-400">cartão</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {group.items.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50 text-sm transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <Calendar size={14} className="text-gray-400" />
-                                  {formatDate(item.data)}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2 text-green-600 font-medium">
-                                  <Clock size={14} className="text-green-500" />
-                                  {item.hora || "--:--"}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
-                              <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
-                              <td className="px-6 py-4">{formatCurrency(item.preco_unitario || 0)}</td>
-                              <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
-                              <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_inicial || 0)}</td>
-                              <td className="px-6 py-4 text-gray-500">{formatNumber(item.enc_final || 0)}</td>
-                              <td className="px-6 py-4 text-gray-400">{item.id_frentista}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+              ) : (
+                paginatedEmployees.map(([empName, group]) => (
+                  <div key={empName} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
+                    <div onClick={() => setExpandedFrentista(expandedFrentista === empName ? null : empName)} className="p-5 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-4 min-w-[250px]">
+                        <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 font-black shadow-inner uppercase">
+                          {getInitials(group.displayName)}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black text-gray-800 uppercase leading-tight">{group.displayName}</h3>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {group.cardIds.map(id => (
+                              <span key={id} className="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-tighter">
+                                {id}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest mt-1 opacity-70">{group.count} registros</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-8 flex-1 justify-end mr-4">
+                        <div className="hidden sm:block">
+                          <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Litros</p>
+                          <p className="font-black text-gray-700">{formatNumber(group.totalLiters)} L</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Total</p>
+                          <p className="font-black text-indigo-600 text-lg">{formatCurrency(group.totalValue)}</p>
+                        </div>
+                      </div>
+                      <div className={`transition-transform duration-300 ${expandedFrentista === empName ? 'rotate-180' : ''}`}><ChevronDown size={24} className="text-gray-400" /></div>
                     </div>
+                    {expandedFrentista === empName && (
+                      <div className="border-t border-gray-100 bg-gray-50/50 p-6 animate-in slide-in-from-top-2 duration-200">
+                        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
+                                <th className="px-6 py-4">data</th>
+                                <th className="px-6 py-4 text-green-600">hora</th>
+                                <th className="px-6 py-4">bico</th>
+                                <th className="px-6 py-4">litros</th>
+                                <th className="px-6 py-4">preço</th>
+                                <th className="px-6 py-4">valor total</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Inicial</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Final</th>
+                                <th className="px-6 py-4 text-gray-400">cartão</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {group.items.map((item) => (
+                                <tr key={item.id} className="hover:bg-gray-50 text-sm transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar size={14} className="text-gray-400" />
+                                      {formatDate(item.data)}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                                      <Clock size={14} className="text-green-500" />
+                                      {item.hora || "--:--"}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold text-indigo-600">{item.bico}</td>
+                                  <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
+                                  <td className="px-6 py-4">{formatCurrency(item.preco_unitario || 0)}</td>
+                                  <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.inicialMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_inicial || 0)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.finalMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_final || 0)}</td>
+                                  <td className="px-6 py-4 text-gray-400">{item.id_frentista}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+                ))
+              )}
+            </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-gray-100 mb-8">
-             <p className="text-sm text-gray-700 hidden sm:block">Página <span className="font-bold">{currentPage}</span> de <span className="font-bold">{totalPages}</span></p>
-             <div className="flex gap-2">
-                <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronLeft size={20}/></button>
-                <button disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronRight size={20}/></button>
-             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-gray-100 mb-8">
+                 <p className="text-sm text-gray-700 hidden sm:block">Página <span className="font-bold">{currentPage}</span> de <span className="font-bold">{totalPages}</span></p>
+                 <div className="flex gap-2">
+                    <button disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronLeft size={20}/></button>
+                    <button disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)} className="p-2 border rounded-xl disabled:opacity-50 hover:bg-indigo-50 hover:border-indigo-200 transition-colors"><ChevronRight size={20}/></button>
+                 </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-4 mb-8">
+            {groupedByBico.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+                <h3 className="text-lg font-bold text-gray-800">Nenhum dado encontrado</h3>
+                <p className="text-gray-500 mt-1">Tente importar abastecimentos ou funcionários.</p>
+              </div>
+            ) : (
+              groupedByBico.map((bicoGroup) => {
+                const litPct = Math.round((bicoGroup.totalLiters / (globalStats.totalLiters || 1)) * 100);
+                const valPct = Math.round((bicoGroup.totalValue / (globalStats.totalValue || 1)) * 100);
+                
+                return (
+                  <div key={bicoGroup.bico} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
+                    <div onClick={() => setExpandedBico(expandedBico === bicoGroup.bico ? null : bicoGroup.bico)} className="p-5 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-4 min-w-[200px]">
+                        <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-md shadow-indigo-100 uppercase">
+                          {bicoGroup.bico}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black text-gray-800 uppercase leading-tight">Bico {bicoGroup.bico}</h3>
+                          <div className="flex gap-2 items-center mt-1">
+                            <span className="text-[10px] text-gray-500 font-bold bg-gray-100 px-2 py-0.5 rounded">
+                              {bicoGroup.count} abastecimentos
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Spark progress bars in layout for high premium fidelity */}
+                      <div className="flex flex-1 max-w-md gap-4 items-center pl-4 sm:pl-0">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between text-[11px] text-gray-500">
+                            <span>Litros: <strong>{formatNumber(bicoGroup.totalLiters)} L</strong></span>
+                            <span>{litPct}%</span>
+                          </div>
+                          <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-blue-500 h-full rounded-full" style={{ width: `${litPct}%` }} />
+                          </div>
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between text-[11px] text-gray-500">
+                            <span>Participação de Venda:</span>
+                            <span>{valPct}%</span>
+                          </div>
+                          <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-green-500 h-full rounded-full" style={{ width: `${valPct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-6 min-w-[200px]">
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Valor Total</p>
+                          <p className="font-black text-indigo-600 text-2xl tracking-tight">
+                            {formatCurrency(bicoGroup.totalValue)}
+                          </p>
+                        </div>
+                        <div className={`transition-transform duration-300 ${expandedBico === bicoGroup.bico ? 'rotate-180' : ''}`}>
+                          <ChevronDown size={24} className="text-gray-400" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {expandedBico === bicoGroup.bico && (
+                      <div className="border-t border-gray-100 bg-gray-50/50 p-6 animate-in slide-in-from-top-2 duration-200">
+                        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
+                                <th className="px-6 py-4">data</th>
+                                <th className="px-6 py-4 text-green-600">hora</th>
+                                <th className="px-6 py-4">Frentista</th>
+                                <th className="px-6 py-4">litros</th>
+                                <th className="px-6 py-4">preço</th>
+                                <th className="px-6 py-4">valor total</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Inicial</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Final</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {bicoGroup.items.map((item) => (
+                                <tr key={item.id} className="hover:bg-gray-50 text-sm transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar size={14} className="text-gray-400" />
+                                      {formatDate(item.data)}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                                      <Clock size={14} className="text-green-500" />
+                                      {item.hora || "--:--"}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold text-gray-700 uppercase">
+                                    {employeeMap[item.id_frentista] || item.id_frentista || "Desconhecido"}
+                                  </td>
+                                  <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
+                                  <td className="px-6 py-4">{formatCurrency(item.preco_unitario || 0)}</td>
+                                  <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.inicialMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_inicial || 0)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.finalMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_final || 0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </main>
