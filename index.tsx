@@ -27,7 +27,8 @@ import {
   CheckSquare, 
   Square,
   CreditCard,
-  UserPlus
+  UserPlus,
+  Layers
 } from 'lucide-react';
 
 // --- Types ---
@@ -164,6 +165,7 @@ const App = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [expandedFrentista, setExpandedFrentista] = useState<string | null>(null);
   const [expandedBico, setExpandedBico] = useState<string | null>(null);
+  const [expandedEncerrante, setExpandedEncerrante] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importType, setImportType] = useState<'refueling' | 'employees'>('refueling');
@@ -185,7 +187,7 @@ const App = () => {
 
   const [sortBy, setSortBy] = useState<'data' | 'bico' | 'valor'>('data');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos'>('frentistas');
+  const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos' | 'encerrantes'>('frentistas');
 
   useEffect(() => {
     const savedData = localStorage.getItem('abastecimentos_data');
@@ -335,9 +337,19 @@ const App = () => {
           if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
         } else {
           const nome = values[0] || row.nome;
-          const cartao1 = (values[2] || row.id_cartao_abast || "").trim();
-          const cartao2 = (values[3] || row.id_cartao_abast_2 || "").trim();
-          const cartao3 = (values[4] || row.id_cartao_abast_3 || "").trim();
+          let cartao1 = "";
+          let cartao2 = "";
+          let cartao3 = "";
+
+          if (values.length === 4) {
+            cartao1 = (values[1] || "").trim();
+            cartao2 = (values[2] || "").trim();
+            cartao3 = (values[3] || "").trim();
+          } else {
+            cartao1 = (values[2] || row.id_cartao_abast || "").trim();
+            cartao2 = (values[3] || row.id_cartao_abast_2 || "").trim();
+            cartao3 = (values[4] || row.id_cartao_abast_3 || "").trim();
+          }
           
           const cards = [cartao1, cartao2, cartao3].filter(c => c.length > 0);
           
@@ -541,6 +553,63 @@ const App = () => {
     };
   }, [data]);
 
+  const groupedByEncerrantes = useMemo(() => {
+    const groups: Record<string, { 
+      bico: string; 
+      precoUnitario: number; 
+      totalLiters: number; 
+      totalValue: number; 
+      items: Refueling[];
+    }> = {};
+
+    filteredData.forEach(item => {
+      const preco = item.preco_unitario || 0;
+      const key = `${item.bico.trim()}_${preco.toFixed(4)}`;
+      if (!groups[key]) {
+        groups[key] = {
+          bico: item.bico.trim(),
+          precoUnitario: preco,
+          totalLiters: 0,
+          totalValue: 0,
+          items: []
+        };
+      }
+      groups[key].totalLiters += item.litros;
+      groups[key].totalValue += item.valor;
+      groups[key].items.push(item);
+    });
+
+    return Object.values(groups).map(g => {
+      const sorted = [...g.items].sort((x, y) => {
+        const timeX = new Date(x.data).getTime();
+        const timeY = new Date(y.data).getTime();
+        if (timeX !== timeY) return timeX - timeY;
+        const horaX = x.hora || '';
+        const horaY = y.hora || '';
+        return horaX.localeCompare(horaY);
+      });
+
+      const firstItem = sorted[0];
+      const lastItem = sorted[sorted.length - 1];
+
+      return {
+        key: `${g.bico}_${g.precoUnitario.toFixed(4)}`,
+        bico: g.bico,
+        precoUnitario: g.precoUnitario,
+        totalLiters: g.totalLiters,
+        totalValue: g.totalValue,
+        encInicial: firstItem ? (firstItem.enc_inicial || 0) : 0,
+        encFinal: lastItem ? (lastItem.enc_final || 0) : 0,
+        count: g.items.length,
+        items: sorted
+      };
+    }).sort((a, b) => {
+      const bicoComp = a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' });
+      if (bicoComp !== 0) return bicoComp;
+      return a.precoUnitario - b.precoUnitario;
+    });
+  }, [filteredData]);
+
   const employeeEntries = (Object.entries(groupedByEmployee) as [string, FrentistaGroup][]);
   const totalPages = Math.ceil(employeeEntries.length / itemsPerPage);
   const paginatedEmployees = employeeEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -676,7 +745,7 @@ const App = () => {
         </div>
 
         {/* Seletor de Abas */}
-        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 mb-8 max-w-md gap-1">
+        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 mb-8 max-w-3xl gap-1">
           <button 
             onClick={() => setActiveTab('frentistas')} 
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
@@ -698,6 +767,17 @@ const App = () => {
           >
             <Fuel size={16} />
             Vendas por Bico
+          </button>
+          <button 
+            onClick={() => setActiveTab('encerrantes')} 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'encerrantes' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
+            }`}
+          >
+            <Layers size={16} />
+            Encerrantes por bico e preço de venda
           </button>
         </div>
 
@@ -811,7 +891,7 @@ const App = () => {
           </div>
         </div>
 
-        {activeTab === 'frentistas' ? (
+        {activeTab === 'frentistas' && (
           <>
             <div className="space-y-4 mb-8">
               {paginatedEmployees.length === 0 ? (
@@ -912,7 +992,9 @@ const App = () => {
               </div>
             )}
           </>
-        ) : (
+        )}
+
+        {activeTab === 'bicos' && (
           <div className="space-y-4 mb-8">
             {groupedByBico.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
@@ -1028,6 +1110,132 @@ const App = () => {
             )}
           </div>
         )}
+
+        {activeTab === 'encerrantes' && (
+          <div className="space-y-4 mb-8">
+            {groupedByEncerrantes.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+                <h3 className="text-lg font-bold text-gray-800">Nenhum dado encontrado</h3>
+                <p className="text-gray-500 mt-1">Tente importar abastecimentos ou funcionários.</p>
+              </div>
+            ) : (
+              groupedByEncerrantes.map((group) => {
+                const isExpanded = expandedEncerrante === group.key;
+                
+                return (
+                  <div key={group.key} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group">
+                    <div 
+                      onClick={() => setExpandedEncerrante(isExpanded ? null : group.key)} 
+                      className="p-5 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4 min-w-[200px]">
+                        <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-md shadow-indigo-100 uppercase">
+                          <Layers size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-black text-gray-800 uppercase leading-tight">Bico {group.bico}</h3>
+                            <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-md">
+                              {formatCurrency(group.precoUnitario)}
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center mt-1">
+                            <span className="text-[10px] text-gray-500 font-bold bg-gray-100 px-2 py-0.5 rounded">
+                              {group.count} abastecimentos
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Informações dos Encerrantes */}
+                      <div className="flex flex-1 max-w-md gap-6 items-center pl-4 sm:pl-0">
+                        <div className="flex-1">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold mb-0.5">Enc. Inicial</p>
+                          <p className={`font-extrabold text-sm ${readingsMismatch.inicialMismatchedIds.has(group.items[0]?.id) ? 'text-red-600' : 'text-gray-700'}`}>
+                            {formatNumber(group.encInicial)} L
+                          </p>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold mb-0.5">Enc. Final</p>
+                          <p className={`font-extrabold text-sm ${readingsMismatch.finalMismatchedIds.has(group.items[group.items.length - 1]?.id) ? 'text-red-600' : 'text-gray-700'}`}>
+                            {formatNumber(group.encFinal)} L
+                          </p>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold mb-0.5">Volume</p>
+                          <p className="font-extrabold text-blue-600 text-sm">
+                            {formatNumber(group.totalLiters)} L
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Valor Total Destacado */}
+                      <div className="flex items-center justify-end gap-6 min-w-[200px]">
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 font-bold uppercase mb-0.5">Valor Total</p>
+                          <p className="font-black text-indigo-600 text-2xl tracking-tight">
+                            {formatCurrency(group.totalValue)}
+                          </p>
+                        </div>
+                        <div className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                          <ChevronDown size={24} className="text-gray-400" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 bg-gray-50/50 p-6 animate-in slide-in-from-top-2 duration-200">
+                        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase">
+                                <th className="px-6 py-4">data</th>
+                                <th className="px-6 py-4 text-green-600">hora</th>
+                                <th className="px-6 py-4">Frentista</th>
+                                <th className="px-6 py-4">litros</th>
+                                <th className="px-6 py-4">preço</th>
+                                <th className="px-6 py-4">valor total</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Inicial</th>
+                                <th className="px-6 py-4 text-gray-400">Enc. Final</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {group.items.map((item) => (
+                                <tr key={item.id} className="hover:bg-gray-50 text-sm transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar size={14} className="text-gray-400" />
+                                      {formatDate(item.data)}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                                      <Clock size={14} className="text-green-500" />
+                                      {item.hora || "--:--"}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold text-gray-700 uppercase">
+                                    {employeeMap[item.id_frentista] || item.id_frentista || "Desconhecido"}
+                                  </td>
+                                  <td className="px-6 py-4">{formatNumber(item.litros)} L</td>
+                                  <td className="px-6 py-4">{formatCurrency(item.preco_unitario || 0)}</td>
+                                  <td className="px-6 py-4 font-black">{formatCurrency(item.valor)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.inicialMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_inicial || 0)}</td>
+                                  <td className={`px-6 py-4 ${readingsMismatch.finalMismatchedIds.has(item.id) ? 'text-red-600 font-extrabold bg-red-50' : 'text-gray-500'}`}>{formatNumber(item.enc_final || 0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
       </main>
 
       <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Abastecimentos" : "Importar Funcionários"}>
