@@ -656,7 +656,7 @@ const App = () => {
             <div className="inline-flex items-center justify-center p-4 bg-indigo-600 rounded-2xl text-white mb-4 shadow-lg">
               <Fuel size={32} />
             </div>
-            <h1 className="text-2xl font-black text-gray-800 tracking-tight">Posto Dashboard</h1>
+            <h1 className="text-2xl font-black text-gray-800 tracking-tight">Leitor de log Horustech</h1>
             <p className="text-gray-500 mt-2">Área Administrativa</p>
           </div>
           <div className="space-y-4">
@@ -684,7 +684,7 @@ const App = () => {
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-2">
               <Fuel className="text-indigo-600" size={28} />
-              <span className="font-black text-xl tracking-tight hidden sm:block">POSTO PRO</span>
+              <span className="font-black text-xl tracking-tight hidden sm:block">LEITOR DE LOG HORUSTECH</span>
             </div>
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex flex-col items-end">
