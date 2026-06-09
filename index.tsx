@@ -187,7 +187,7 @@ const App = () => {
 
   const [sortBy, setSortBy] = useState<'data' | 'bico' | 'valor'>('data');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos' | 'encerrantes'>('frentistas');
+  const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos' | 'encerrantes' | 'vendas_preco'>('frentistas');
 
   useEffect(() => {
     const savedData = localStorage.getItem('abastecimentos_data');
@@ -610,6 +610,22 @@ const App = () => {
     });
   }, [filteredData]);
 
+  const groupedByPrice = useMemo(() => {
+    const groups: Record<number, { preco: number; totalLiters: number; totalValue: number; count: number }> = {};
+    
+    filteredData.forEach(item => {
+      const preco = item.preco_unitario || 0;
+      if (!groups[preco]) {
+        groups[preco] = { preco, totalLiters: 0, totalValue: 0, count: 0 };
+      }
+      groups[preco].totalLiters += item.litros;
+      groups[preco].totalValue += item.valor;
+      groups[preco].count += 1;
+    });
+
+    return Object.values(groups).sort((a, b) => b.preco - a.preco);
+  }, [filteredData]);
+
   const employeeEntries = (Object.entries(groupedByEmployee) as [string, FrentistaGroup][]);
   const totalPages = Math.ceil(employeeEntries.length / itemsPerPage);
   const paginatedEmployees = employeeEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -745,10 +761,10 @@ const App = () => {
         </div>
 
         {/* Seletor de Abas */}
-        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 mb-8 max-w-3xl gap-1">
+        <div className="flex flex-wrap bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 mb-8 max-w-5xl gap-1">
           <button 
             onClick={() => setActiveTab('frentistas')} 
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 min-w-[150px] ${
               activeTab === 'frentistas' 
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
                 : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
@@ -759,7 +775,7 @@ const App = () => {
           </button>
           <button 
             onClick={() => setActiveTab('bicos')} 
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 min-w-[150px] ${
               activeTab === 'bicos' 
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
                 : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
@@ -770,7 +786,7 @@ const App = () => {
           </button>
           <button 
             onClick={() => setActiveTab('encerrantes')} 
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 min-w-[250px] ${
               activeTab === 'encerrantes' 
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
                 : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
@@ -778,6 +794,17 @@ const App = () => {
           >
             <Layers size={16} />
             Encerrantes por bico e preço de venda
+          </button>
+          <button 
+            onClick={() => setActiveTab('vendas_preco')} 
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all duration-300 min-w-[150px] ${
+              activeTab === 'vendas_preco' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' 
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
+            }`}
+          >
+            <DollarSign size={16} />
+            Vendas por Preço
           </button>
         </div>
 
@@ -1232,6 +1259,75 @@ const App = () => {
                   </div>
                 );
               })
+            )}
+          </div>
+        )}
+
+        {activeTab === 'vendas_preco' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                  <DollarSign size={20} className="text-indigo-600" />
+                  Vendas por Preço de Venda
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">Dados agrupados de acordo com os preços praticados nos bicos</p>
+              </div>
+              <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full">
+                {groupedByPrice.length} preço(s) diferente(s)
+              </span>
+            </div>
+            
+            {groupedByPrice.length === 0 ? (
+              <div className="text-center py-12">
+                <h3 className="text-lg font-bold text-gray-800">Nenhum dado encontrado</h3>
+                <p className="text-gray-500 mt-1">Tente importar abastecimentos ou funcionários.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <th className="px-8 py-4">Preço Unitário</th>
+                      <th className="px-8 py-4">Quantidade de Abastecimentos</th>
+                      <th className="px-8 py-4">Litros Vendidos</th>
+                      <th className="px-8 py-4 text-right">Valor Total Vendido</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {groupedByPrice.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50/50 text-sm transition-colors">
+                        <td className="px-8 py-4 font-black text-indigo-600">
+                          {formatCurrency(item.preco)}
+                        </td>
+                        <td className="px-8 py-4 font-bold text-gray-650">
+                          {item.count} abastecimento(s)
+                        </td>
+                        <td className="px-8 py-4 font-black text-gray-700">
+                          {formatNumber(item.totalLiters)} L
+                        </td>
+                        <td className="px-8 py-4 font-black text-gray-900 text-right">
+                          {formatCurrency(item.totalValue)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-indigo-50/40 border-t border-gray-200 font-black text-sm text-gray-900">
+                      <td className="px-8 py-5 text-indigo-800 uppercase tracking-wider font-extrabold">TOTAL GERAL</td>
+                      <td className="px-8 py-5 text-gray-800 font-extrabold">
+                        {groupedByPrice.reduce((sum, item) => sum + item.count, 0)} abastecimento(s)
+                      </td>
+                      <td className="px-8 py-5 text-blue-650 font-extrabold">
+                        {formatNumber(groupedByPrice.reduce((sum, item) => sum + item.totalLiters, 0))} L
+                      </td>
+                      <td className="px-8 py-5 text-indigo-900 text-right text-base font-extrabold">
+                        {formatCurrency(groupedByPrice.reduce((sum, item) => sum + item.totalValue, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
         )}
