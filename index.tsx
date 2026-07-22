@@ -80,13 +80,18 @@ const BR_TIMEZONE = 'America/Sao_Paulo';
 
 // --- Utilities ---
 
-const formatCurrency = (val: number) => 
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+const formatCurrency = (val: number) => {
+  const num = typeof val === 'number' && !isNaN(val) ? val : 0;
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+};
 
-const formatNumber = (val: number) => 
-  new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+const formatNumber = (val: number) => {
+  const num = typeof val === 'number' && !isNaN(val) ? val : 0;
+  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+};
 
 const formatDate = (dateStr: string) => {
+  if (!dateStr) return 'Data Inválida';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return 'Data Inválida';
   return d.toLocaleDateString('pt-BR', { timeZone: BR_TIMEZONE });
@@ -94,23 +99,27 @@ const formatDate = (dateStr: string) => {
 
 const getInitials = (name: string) => {
   if (!name) return '??';
-  const parts = name.split(' ').filter(p => p.length > 0);
+  const parts = String(name).split(' ').filter(p => p.length > 0);
+  if (parts.length === 0) return '??';
   if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
 const getDateOnlyString = (isoString: string): string => {
   try {
+    if (!isoString) return "";
     const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
     return d.toLocaleDateString('en-CA', { timeZone: BR_TIMEZONE });
   } catch {
     return "";
   }
 };
 
-const parseDateRobust = (dateStr: string): string => {
+const parseDateRobust = (dateStr: any): string => {
   if (!dateStr) return new Date().toISOString();
-  const s = dateStr.trim();
+  const s = String(dateStr).trim();
+  if (!s) return new Date().toISOString();
   const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
@@ -168,7 +177,7 @@ const App = () => {
   const [expandedEncerrante, setExpandedEncerrante] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importType, setImportType] = useState<'refueling' | 'employees'>('refueling');
+  const [importType, setImportType] = useState<'refueling' | 'comcept' | 'employees'>('refueling');
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -190,16 +199,30 @@ const App = () => {
   const [activeTab, setActiveTab] = useState<'frentistas' | 'bicos' | 'encerrantes' | 'vendas_preco'>('frentistas');
 
   useEffect(() => {
-    const savedData = localStorage.getItem('abastecimentos_data');
-    if (savedData) setData(JSON.parse(savedData));
-    const savedEmployees = localStorage.getItem('posto_employees');
-    if (savedEmployees) setEmployees(JSON.parse(savedEmployees));
-    const savedUser = localStorage.getItem('abastecimentos_user');
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      if (parsedUser && parsedUser.role === 'admin') setCurrentUser(parsedUser);
-      else localStorage.removeItem('abastecimentos_user');
-    }
+    try {
+      const savedData = localStorage.getItem('abastecimentos_data');
+      if (savedData) {
+        const parsed = JSON.parse(savedData);
+        if (Array.isArray(parsed)) setData(parsed);
+      }
+    } catch (e) { console.error("Error loading abastecimentos_data", e); }
+
+    try {
+      const savedEmployees = localStorage.getItem('posto_employees');
+      if (savedEmployees) {
+        const parsed = JSON.parse(savedEmployees);
+        if (Array.isArray(parsed)) setEmployees(parsed);
+      }
+    } catch (e) { console.error("Error loading posto_employees", e); }
+
+    try {
+      const savedUser = localStorage.getItem('abastecimentos_user');
+      if (savedUser) {
+        const parsedUser = JSON.parse(savedUser);
+        if (parsedUser && parsedUser.role === 'admin') setCurrentUser(parsedUser);
+        else localStorage.removeItem('abastecimentos_user');
+      }
+    } catch (e) { console.error("Error loading abastecimentos_user", e); }
 
     const handleClickOutside = (event: MouseEvent) => {
       if (frentistaDropdownRef.current && !frentistaDropdownRef.current.contains(event.target as Node)) {
@@ -263,7 +286,7 @@ const App = () => {
     return map;
   }, [employees]);
 
-  const parseCSV = (text: string, type: 'refueling' | 'employees'): any[] => {
+  const parseCSV = (text: string, type: 'refueling' | 'comcept' | 'employees'): any[] => {
     if (!currentUser) return [];
     // Remove BOM if exists
     const cleanText = text.replace(/^\uFEFF/, '');
@@ -335,6 +358,61 @@ const App = () => {
             ownerId: currentUser.id
           };
           if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
+        } else if (type === 'comcept') {
+          // Formato Log Comcept
+          // Coluna 2 (index 1): Valor Total (total)
+          // Coluna 3 (index 2): Volume (volume)
+          // Coluna 4 (index 3): Preço Unitário (price)
+          // Coluna 6 (index 5): Data (date)
+          // Coluna 7 (index 6): Hora (hour)
+          // Coluna 9 (index 8): Encerrante Inicial (totals_volume_init)
+          // Coluna 10 (index 9): Encerrante Final (totals_volume_final)
+          // Coluna 13 (index 12): Card Frentista (card_attendant / attendant_name)
+          // Coluna 15 (index 14): Bico (nozzle)
+          let valorTotal = parseFloat(String(values[1] || row.total || row.valor || '0').replace(',', '.'));
+          let volume = parseFloat(String(values[2] || row.volume || row.litros || '0').replace(',', '.'));
+          let precoUnitario = parseFloat(String(values[3] || row.price || row.preco_unitario || '0').replace(',', '.'));
+          let encInicial = parseFloat(String(values[8] || row.totals_volume_init || row.enc_inicial || '0').replace(',', '.'));
+          let encFinal = parseFloat(String(values[9] || row.totals_volume_final || row.enc_final || '0').replace(',', '.'));
+
+          const frentistaId = (row.attendant_name && String(row.attendant_name).trim() !== '') 
+            ? String(row.attendant_name).trim() 
+            : (values.length >= 13 ? values[12] : (row.card_attendant || row.id_frentista || 'N/A'));
+          
+          const bicoRaw = values.length >= 15 ? values[14] : (row.nozzle || row.bico || 'B?');
+          const dateRaw = row.date || row.data || (values.length >= 6 ? values[5] : '');
+          const horaRaw = row.hour || row.hora || (values.length >= 7 ? values[6] : '');
+
+          if (volume === 0 && encFinal > 0 && encInicial > 0) {
+            volume = encFinal - encInicial;
+          }
+
+          if (valorTotal === 0 && volume > 0 && precoUnitario > 0) {
+            valorTotal = volume * precoUnitario;
+          }
+
+          if (precoUnitario === 0 && volume > 0 && valorTotal > 0) {
+            precoUnitario = valorTotal / volume;
+          }
+
+          if (volume === 0 && valorTotal > 0 && precoUnitario > 0) {
+            volume = valorTotal / precoUnitario;
+          }
+
+          const newItem: Refueling = {
+            id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
+            id_frentista: String(frentistaId).trim(),
+            data: parseDateRobust(dateRaw),
+            hora: horaRaw,
+            bico: String(bicoRaw),
+            valor: valorTotal,
+            litros: volume,
+            preco_unitario: precoUnitario,
+            enc_inicial: encInicial,
+            enc_final: encFinal,
+            ownerId: currentUser.id
+          };
+          if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
         } else {
           const nome = values[0] || row.nome;
           let cartao1 = "";
@@ -371,7 +449,7 @@ const App = () => {
         const text = e.target?.result as string;
         const newItems = parseCSV(text, importType);
         if (newItems.length > 0) {
-          if (importType === 'refueling') {
+          if (importType === 'refueling' || importType === 'comcept') {
             setData(prev => [...prev, ...newItems]);
           } else {
             setEmployees(prev => {
@@ -422,7 +500,7 @@ const App = () => {
     if (selectedFrentistas.length > 0) {
       result = result.filter(item => {
         const name = employeeMap[item.id_frentista] || item.id_frentista;
-        return selectedFrentistas.includes(name);
+        return name && selectedFrentistas.includes(name);
       });
     }
 
@@ -435,17 +513,21 @@ const App = () => {
       });
     }
     if (filterBico) {
-      result = result.filter(item => item.bico.trim().toLowerCase() === filterBico.trim().toLowerCase());
+      result = result.filter(item => item.bico && String(item.bico).trim().toLowerCase() === filterBico.trim().toLowerCase());
     }
     return [...result].sort((a, b) => {
+      const bicoA = String(a.bico || '');
+      const bicoB = String(b.bico || '');
       if (sortBy === 'bico') {
-        return a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' }) * (sortOrder === 'asc' ? 1 : -1);
+        return bicoA.localeCompare(bicoB, undefined, { numeric: true, sensitivity: 'base' }) * (sortOrder === 'asc' ? 1 : -1);
       }
-      let valA: any = a[sortBy];
-      let valB: any = b[sortBy];
+      let valA: any = a[sortBy] ?? 0;
+      let valB: any = b[sortBy] ?? 0;
       if (sortBy === 'data') {
-        valA = new Date(a.data).getTime();
-        valB = new Date(b.data).getTime();
+        valA = a.data ? new Date(a.data).getTime() : 0;
+        valB = b.data ? new Date(b.data).getTime() : 0;
+        if (isNaN(valA)) valA = 0;
+        if (isNaN(valB)) valB = 0;
       }
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
@@ -455,8 +537,8 @@ const App = () => {
 
   const globalStats = useMemo(() => {
     return filteredData.reduce((acc, curr) => ({
-      totalLiters: acc.totalLiters + curr.litros,
-      totalValue: acc.totalValue + curr.valor,
+      totalLiters: acc.totalLiters + (curr.litros || 0),
+      totalValue: acc.totalValue + (curr.valor || 0),
       totalCount: acc.totalCount + 1
     }), { totalLiters: 0, totalValue: 0, totalCount: 0 });
   }, [filteredData]);
@@ -465,7 +547,7 @@ const App = () => {
     const groups: Record<string, FrentistaGroup> = {};
     
     filteredData.forEach(item => {
-      const name = employeeMap[item.id_frentista] || item.id_frentista;
+      const name = employeeMap[item.id_frentista] || item.id_frentista || 'Desconhecido';
       
       if (!groups[name]) {
         groups[name] = { 
@@ -479,10 +561,10 @@ const App = () => {
       }
       
       groups[name].items.push(item);
-      groups[name].totalLiters += item.litros;
-      groups[name].totalValue += item.valor;
+      groups[name].totalLiters += item.litros || 0;
+      groups[name].totalValue += item.valor || 0;
       groups[name].count += 1;
-      if (!groups[name].cardIds.includes(item.id_frentista)) {
+      if (item.id_frentista && !groups[name].cardIds.includes(item.id_frentista)) {
         groups[name].cardIds.push(item.id_frentista);
       }
     });
@@ -494,27 +576,31 @@ const App = () => {
     const groups: Record<string, { bico: string; totalLiters: number; totalValue: number; count: number; items: Refueling[] }> = {};
     
     filteredData.forEach(item => {
-      const bico = item.bico;
+      const bico = String(item.bico || 'B?');
       if (!groups[bico]) {
         groups[bico] = { bico, totalLiters: 0, totalValue: 0, count: 0, items: [] };
       }
-      groups[bico].totalLiters += item.litros;
-      groups[bico].totalValue += item.valor;
+      groups[bico].totalLiters += item.litros || 0;
+      groups[bico].totalValue += item.valor || 0;
       groups[bico].count += 1;
       groups[bico].items.push(item);
     });
     
     Object.keys(groups).forEach(b => {
-      groups[b].items.sort((x, y) => new Date(y.data).getTime() - new Date(x.data).getTime());
+      groups[b].items.sort((x, y) => {
+        const timeX = x.data ? new Date(x.data).getTime() : 0;
+        const timeY = y.data ? new Date(y.data).getTime() : 0;
+        return (isNaN(timeY) ? 0 : timeY) - (isNaN(timeX) ? 0 : timeX);
+      });
     });
     
-    return Object.values(groups).sort((a, b) => a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' }));
+    return Object.values(groups).sort((a, b) => String(a.bico).localeCompare(String(b.bico), undefined, { numeric: true, sensitivity: 'base' }));
   }, [filteredData]);
 
   const readingsMismatch = useMemo(() => {
     const bicoGroups: Record<string, Refueling[]> = {};
     data.forEach(item => {
-      const b = item.bico;
+      const b = String(item.bico || 'B?');
       if (!bicoGroups[b]) bicoGroups[b] = [];
       bicoGroups[b].push(item);
     });
@@ -526,11 +612,11 @@ const App = () => {
       const items = bicoGroups[b];
       // Ordenar cronologicamente em ordem crescente (mais antigo pro mais novo)
       const sorted = [...items].sort((x, y) => {
-        const timeX = new Date(x.data).getTime();
-        const timeY = new Date(y.data).getTime();
-        if (timeX !== timeY) return timeX - timeY;
-        const horaX = x.hora || '';
-        const horaY = y.hora || '';
+        const timeX = x.data ? new Date(x.data).getTime() : 0;
+        const timeY = y.data ? new Date(y.data).getTime() : 0;
+        if (timeX !== timeY) return (isNaN(timeX) ? 0 : timeX) - (isNaN(timeY) ? 0 : timeY);
+        const horaX = String(x.hora || '');
+        const horaY = String(y.hora || '');
         return horaX.localeCompare(horaY);
       });
 
@@ -541,8 +627,8 @@ const App = () => {
         const valInicial = next.enc_inicial || 0;
 
         if (valFinal !== valInicial) {
-          finalMismatchedIds.add(current.id);
-          inicialMismatchedIds.add(next.id);
+          if (current.id) finalMismatchedIds.add(current.id);
+          if (next.id) inicialMismatchedIds.add(next.id);
         }
       }
     });
@@ -564,28 +650,29 @@ const App = () => {
 
     filteredData.forEach(item => {
       const preco = item.preco_unitario || 0;
-      const key = `${item.bico.trim()}_${preco.toFixed(4)}`;
+      const bicoStr = String(item.bico || 'B?').trim();
+      const key = `${bicoStr}_${preco.toFixed(4)}`;
       if (!groups[key]) {
         groups[key] = {
-          bico: item.bico.trim(),
+          bico: bicoStr,
           precoUnitario: preco,
           totalLiters: 0,
           totalValue: 0,
           items: []
         };
       }
-      groups[key].totalLiters += item.litros;
-      groups[key].totalValue += item.valor;
+      groups[key].totalLiters += item.litros || 0;
+      groups[key].totalValue += item.valor || 0;
       groups[key].items.push(item);
     });
 
     return Object.values(groups).map(g => {
       const sorted = [...g.items].sort((x, y) => {
-        const timeX = new Date(x.data).getTime();
-        const timeY = new Date(y.data).getTime();
-        if (timeX !== timeY) return timeX - timeY;
-        const horaX = x.hora || '';
-        const horaY = y.hora || '';
+        const timeX = x.data ? new Date(x.data).getTime() : 0;
+        const timeY = y.data ? new Date(y.data).getTime() : 0;
+        if (timeX !== timeY) return (isNaN(timeX) ? 0 : timeX) - (isNaN(timeY) ? 0 : timeY);
+        const horaX = String(x.hora || '');
+        const horaY = String(y.hora || '');
         return horaX.localeCompare(horaY);
       });
 
@@ -604,7 +691,7 @@ const App = () => {
         items: sorted
       };
     }).sort((a, b) => {
-      const bicoComp = a.bico.localeCompare(b.bico, undefined, { numeric: true, sensitivity: 'base' });
+      const bicoComp = String(a.bico).localeCompare(String(b.bico), undefined, { numeric: true, sensitivity: 'base' });
       if (bicoComp !== 0) return bicoComp;
       return a.precoUnitario - b.precoUnitario;
     });
@@ -725,7 +812,10 @@ const App = () => {
           </div>
           <div className="flex flex-wrap gap-3">
             <button onClick={() => { setImportType('refueling'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
-              <FileUp size={18} /> Importar Abastecimentos
+              <FileUp size={18} /> Log Horustech
+            </button>
+            <button onClick={() => { setImportType('comcept'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
+              <FileUp size={18} /> Log Comcept
             </button>
             <button onClick={() => { setImportType('employees'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm">
               <UserPlus size={18} /> Importar Funcionários
@@ -1334,14 +1424,16 @@ const App = () => {
 
       </main>
 
-      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Abastecimentos" : "Importar Funcionários"}>
+      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Log Horustech" : importType === 'comcept' ? "Importar Log Comcept" : "Importar Funcionários"}>
         <div className="text-center">
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full inline-flex mb-4">
-            {importType === 'refueling' ? <UploadCloud size={40} /> : <Users size={40} />}
+            {importType === 'employees' ? <Users size={40} /> : <UploadCloud size={40} />}
           </div>
           <p className="text-gray-600 text-sm mb-6 leading-relaxed">
             {importType === 'refueling' ? 
-              "Selecione o arquivo CSV. O sistema detectará o ID do Frentista na Coluna 13 e tratará datas no formato (DD/MM/AAAA)." : 
+              "Selecione o arquivo CSV do Log Horustech." : 
+             importType === 'comcept' ?
+              "Selecione o arquivo CSV do Log Comcept (Coluna 2: Valor, Coluna 3: Volume, Coluna 9: Enc. Inicial, Coluna 10: Enc. Final)." :
               "Importe a lista de funcionários. Coluna 1: Nome, Colunas 3, 4, 5: IDs dos Cartões."
             }
           </p>
