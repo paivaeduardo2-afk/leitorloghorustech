@@ -815,7 +815,7 @@ const App = () => {
               <FileUp size={18} /> Log Horustech
             </button>
             <button onClick={() => { setImportType('comcept'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
-              <FileUp size={18} /> Log Comcept
+              <FileUp size={18} /> Log Concept
             </button>
             <button onClick={() => { setImportType('employees'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm">
               <UserPlus size={18} /> Importar Funcionários
@@ -1424,7 +1424,7 @@ const App = () => {
 
       </main>
 
-      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Log Horustech" : importType === 'comcept' ? "Importar Log Comcept" : "Importar Funcionários"}>
+      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Log Horustech" : importType === 'comcept' ? "Importar Log Concept" : "Importar Funcionários"}>
         <div className="text-center">
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full inline-flex mb-4">
             {importType === 'employees' ? <Users size={40} /> : <UploadCloud size={40} />}
@@ -1433,7 +1433,7 @@ const App = () => {
             {importType === 'refueling' ? 
               "Selecione o arquivo CSV do Log Horustech." : 
              importType === 'comcept' ?
-              "Selecione o arquivo CSV do Log Comcept (Coluna 2: Valor, Coluna 3: Volume, Coluna 9: Enc. Inicial, Coluna 10: Enc. Final)." :
+              "Selecione o arquivo CSV do Log Concept (Coluna 2: Valor, Coluna 3: Volume, Coluna 9: Enc. Inicial, Coluna 10: Enc. Final)." :
               "Importe a lista de funcionários. Coluna 1: Nome, Colunas 3, 4, 5: IDs dos Cartões."
             }
           </p>
