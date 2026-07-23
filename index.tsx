@@ -916,16 +916,44 @@ const App = () => {
             <p className="text-gray-500">Filtrado por Frentista • Fuso: Brasil (Brasília)</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => { setImportType('refueling'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
+            <button 
+              onClick={() => { setImportType('refueling'); setIsImportModalOpen(true); }} 
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-md active:bg-yellow-200 focus:bg-yellow-200 ${
+                isImportModalOpen && importType === 'refueling'
+                  ? 'bg-yellow-200 text-yellow-950 border border-yellow-400 shadow-yellow-100'
+                  : 'bg-indigo-600 hover:bg-yellow-200 hover:text-yellow-950 text-white shadow-indigo-100'
+              }`}
+            >
               <FileUp size={18} /> Log Horustech
             </button>
-            <button onClick={() => { setImportType('comcept'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
+            <button 
+              onClick={() => { setImportType('comcept'); setIsImportModalOpen(true); }} 
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-md active:bg-yellow-200 focus:bg-yellow-200 ${
+                isImportModalOpen && importType === 'comcept'
+                  ? 'bg-yellow-200 text-yellow-950 border border-yellow-400 shadow-yellow-100'
+                  : 'bg-indigo-600 hover:bg-yellow-200 hover:text-yellow-950 text-white shadow-indigo-100'
+              }`}
+            >
               <FileUp size={18} /> Log Concept
             </button>
-            <button onClick={() => { setImportType('hiro'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
+            <button 
+              onClick={() => { setImportType('hiro'); setIsImportModalOpen(true); }} 
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-md active:bg-yellow-200 focus:bg-yellow-200 ${
+                isImportModalOpen && importType === 'hiro'
+                  ? 'bg-yellow-200 text-yellow-950 border border-yellow-400 shadow-yellow-100'
+                  : 'bg-indigo-600 hover:bg-yellow-200 hover:text-yellow-950 text-white shadow-indigo-100'
+              }`}
+            >
               <FileUp size={18} /> Log Hiro
             </button>
-            <button onClick={() => { setImportType('employees'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm">
+            <button 
+              onClick={() => { setImportType('employees'); setIsImportModalOpen(true); }} 
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm active:bg-yellow-200 focus:bg-yellow-200 ${
+                isImportModalOpen && importType === 'employees'
+                  ? 'bg-yellow-200 text-yellow-950 border border-yellow-400 shadow-yellow-100'
+                  : 'bg-white border border-indigo-200 text-indigo-600 hover:bg-yellow-200 hover:text-indigo-950'
+              }`}
+            >
               <UserPlus size={18} /> Importar Funcionários
             </button>
             <button onClick={() => setIsDeleteModalOpen(true)} className="flex items-center gap-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 px-5 py-2.5 rounded-xl font-bold transition-all">
