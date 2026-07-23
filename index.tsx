@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as XLSX from 'xlsx';
 import { 
   LogOut, 
   Trash2, 
@@ -120,7 +121,7 @@ const parseDateRobust = (dateStr: any): string => {
   if (!dateStr) return new Date().toISOString();
   const s = String(dateStr).trim();
   if (!s) return new Date().toISOString();
-  const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10) - 1; 
@@ -132,7 +133,7 @@ const parseDateRobust = (dateStr: any): string => {
     const d = new Date(year, month, day, hour, min, sec);
     if (!isNaN(d.getTime())) return d.toISOString();
   }
-  const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (ymdMatch) {
     const year = parseInt(ymdMatch[1], 10);
     const month = parseInt(ymdMatch[2], 10) - 1;
@@ -145,6 +146,31 @@ const parseDateRobust = (dateStr: any): string => {
   }
   const fallback = new Date(s);
   return isNaN(fallback.getTime()) ? new Date().toISOString() : fallback.toISOString();
+};
+
+const extractDateTime = (raw: any): { dateIso: string, horaStr: string } => {
+  if (!raw) {
+    return { dateIso: new Date().toISOString(), horaStr: '' };
+  }
+
+  const s = String(raw).trim();
+  let horaStr = '';
+
+  const timeMatch = s.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+  if (timeMatch) {
+    let t = timeMatch[1];
+    const parts = t.split(':');
+    if (parts[0].length === 1) {
+      parts[0] = '0' + parts[0];
+    }
+    if (parts.length === 2) {
+      parts.push('00');
+    }
+    horaStr = parts.join(':');
+  }
+
+  const dateIso = parseDateRobust(s);
+  return { dateIso, horaStr };
 };
 
 // --- Components ---
@@ -177,7 +203,7 @@ const App = () => {
   const [expandedEncerrante, setExpandedEncerrante] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importType, setImportType] = useState<'refueling' | 'comcept' | 'employees'>('refueling');
+  const [importType, setImportType] = useState<'refueling' | 'comcept' | 'hiro' | 'employees'>('refueling');
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -286,7 +312,7 @@ const App = () => {
     return map;
   }, [employees]);
 
-  const parseCSV = (text: string, type: 'refueling' | 'comcept' | 'employees'): any[] => {
+  const parseCSV = (text: string, type: 'refueling' | 'comcept' | 'hiro' | 'employees'): any[] => {
     if (!currentUser) return [];
     // Remove BOM if exists
     const cleanText = text.replace(/^\uFEFF/, '');
@@ -413,6 +439,64 @@ const App = () => {
             ownerId: currentUser.id
           };
           if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
+        } else if (type === 'hiro') {
+          // Formato Log Hiro:
+          // 1ª coluna (index 0): Número do Bico
+          // 3ª coluna (index 2): Data e Hora (no mesmo campo, ex: "30/03/2026  03:54:00")
+          // 4ª coluna (index 3): Preço de Venda
+          // 5ª coluna (index 4): Litro Vendido (Volume)
+          // 6ª coluna (index 5): Total do Abastecimento (Valor Total)
+          // 7ª coluna (index 6): Encerrante Inicial
+          // 8ª coluna (index 7): Encerrante Final
+          // 10ª coluna (index 9): Cartão do Funcionário
+          const bicoRaw = (values.length >= 1 && values[0] && String(values[0]).trim() !== '') 
+            ? values[0] 
+            : (row.nozzle || row.bico || row.nozzle_number || 'B?');
+
+          let dateRaw = values.length >= 3 ? values[2] : (row.date || row.data || row['data/hora'] || row['data_hora'] || '');
+          let precoUnitario = parseFloat(String(values[3] || row.price || row.preco || row.preco_unitario || '0').replace(',', '.'));
+          let volume = parseFloat(String(values[4] || row.volume || row.litros || row.litro || '0').replace(',', '.'));
+          let valorTotal = parseFloat(String(values[5] || row.total || row.valor || row.valor_total || '0').replace(',', '.'));
+          let encInicial = parseFloat(String(values[6] || row.totals_volume_init || row.enc_inicial || '0').replace(',', '.'));
+          let encFinal = parseFloat(String(values[7] || row.totals_volume_final || row.enc_final || '0').replace(',', '.'));
+
+          const frentistaId = (values.length >= 10 && values[9] && String(values[9]).trim() !== '') 
+            ? String(values[9]).trim() 
+            : (row.card_attendant || row.id_frentista || row.cartao || row.card || 'N/A');
+
+          const { dateIso, horaStr } = extractDateTime(dateRaw);
+          let horaRaw = row.hour || row.hora || horaStr;
+
+          if (volume === 0 && encFinal > 0 && encInicial > 0) {
+            volume = encFinal - encInicial;
+          }
+
+          if (valorTotal === 0 && volume > 0 && precoUnitario > 0) {
+            valorTotal = volume * precoUnitario;
+          }
+
+          if (precoUnitario === 0 && volume > 0 && valorTotal > 0) {
+            precoUnitario = valorTotal / volume;
+          }
+
+          if (volume === 0 && valorTotal > 0 && precoUnitario > 0) {
+            volume = valorTotal / precoUnitario;
+          }
+
+          const newItem: Refueling = {
+            id: Math.random().toString(36).substr(2, 9) + Date.now() + i,
+            id_frentista: String(frentistaId).trim(),
+            data: dateIso,
+            hora: horaRaw,
+            bico: String(bicoRaw).trim(),
+            valor: valorTotal,
+            litros: volume,
+            preco_unitario: precoUnitario,
+            enc_inicial: encInicial,
+            enc_final: encFinal,
+            ownerId: currentUser.id
+          };
+          if (!isNaN(newItem.valor) || !isNaN(newItem.litros)) result.push(newItem);
         } else {
           const nome = values[0] || row.nome;
           let cartao1 = "";
@@ -444,30 +528,51 @@ const App = () => {
 
   const handleImport = () => {
     if (selectedFile) {
+      const isExcel = selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls');
       const reader = new FileReader();
       reader.onload = (e) => {
-        const text = e.target?.result as string;
-        const newItems = parseCSV(text, importType);
-        if (newItems.length > 0) {
-          if (importType === 'refueling' || importType === 'comcept') {
-            setData(prev => [...prev, ...newItems]);
+        try {
+          let csvText = '';
+          if (isExcel) {
+            const data = new Uint8Array(e.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            csvText = XLSX.utils.sheet_to_csv(worksheet, { FS: ';', dateNF: 'dd/mm/yyyy hh:mm:ss' });
           } else {
-            setEmployees(prev => {
-              const merged = [...prev];
-              newItems.forEach(item => {
-                const idx = merged.findIndex(e => e.id_cartao === item.id_cartao);
-                if (idx > -1) merged[idx] = item;
-                else merged.push(item);
-              });
-              return merged;
-            });
+            csvText = e.target?.result as string;
           }
-          setIsImportModalOpen(false);
-          setSelectedFile(null);
-          setCurrentPage(1);
-        } else alert("Não foi possível encontrar dados válidos no arquivo CSV.");
+
+          const newItems = parseCSV(csvText, importType);
+          if (newItems.length > 0) {
+            if (importType === 'refueling' || importType === 'comcept' || importType === 'hiro') {
+              setData(prev => [...prev, ...newItems]);
+            } else {
+              setEmployees(prev => {
+                const merged = [...prev];
+                newItems.forEach(item => {
+                  const idx = merged.findIndex(e => e.id_cartao === item.id_cartao);
+                  if (idx > -1) merged[idx] = item;
+                  else merged.push(item);
+                });
+                return merged;
+              });
+            }
+            setIsImportModalOpen(false);
+            setSelectedFile(null);
+            setCurrentPage(1);
+          } else alert("Não foi possível encontrar dados válidos no arquivo.");
+        } catch (err) {
+          console.error("Erro ao importar arquivo:", err);
+          alert("Erro ao ler o arquivo. Certifique-se de que é um arquivo CSV ou Excel válido.");
+        }
       };
-      reader.readAsText(selectedFile);
+
+      if (isExcel) {
+        reader.readAsArrayBuffer(selectedFile);
+      } else {
+        reader.readAsText(selectedFile);
+      }
     }
   };
 
@@ -816,6 +921,9 @@ const App = () => {
             </button>
             <button onClick={() => { setImportType('comcept'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
               <FileUp size={18} /> Log Concept
+            </button>
+            <button onClick={() => { setImportType('hiro'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100">
+              <FileUp size={18} /> Log Hiro
             </button>
             <button onClick={() => { setImportType('employees'); setIsImportModalOpen(true); }} className="flex items-center gap-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm">
               <UserPlus size={18} /> Importar Funcionários
@@ -1424,7 +1532,7 @@ const App = () => {
 
       </main>
 
-      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Log Horustech" : importType === 'comcept' ? "Importar Log Concept" : "Importar Funcionários"}>
+      <Modal isOpen={isImportModalOpen} onClose={() => { setIsImportModalOpen(false); setSelectedFile(null); }} title={importType === 'refueling' ? "Importar Log Horustech" : importType === 'comcept' ? "Importar Log Concept" : importType === 'hiro' ? "Importar Log Hiro" : "Importar Funcionários"}>
         <div className="text-center">
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full inline-flex mb-4">
             {importType === 'employees' ? <Users size={40} /> : <UploadCloud size={40} />}
@@ -1434,13 +1542,15 @@ const App = () => {
               "Selecione o arquivo CSV do Log Horustech." : 
              importType === 'comcept' ?
               "Selecione o arquivo CSV do Log Concept (Coluna 2: Valor, Coluna 3: Volume, Coluna 9: Enc. Inicial, Coluna 10: Enc. Final)." :
+             importType === 'hiro' ?
+              "Selecione o arquivo (CSV ou Excel) do Log Hiro (Coluna 1: Bico, Coluna 3: Data/Hora, Coluna 4: Preço, Coluna 5: Litros, Coluna 6: Total, Coluna 7: Enc. Inicial, Coluna 8: Enc. Final, Coluna 10: Cartão)." :
               "Importe a lista de funcionários. Coluna 1: Nome, Colunas 3, 4, 5: IDs dos Cartões."
             }
           </p>
           <div className="mb-6">
-            <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+            <input type="file" accept=".csv, .xlsx, .xls" className="hidden" ref={fileInputRef} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
             {!selectedFile ? (
-              <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-2xl hover:border-indigo-400 hover:bg-indigo-50/30 text-gray-500 font-bold transition-all"><Plus size={20} />Escolher Arquivo CSV</button>
+              <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-2xl hover:border-indigo-400 hover:bg-indigo-50/30 text-gray-500 font-bold transition-all"><Plus size={20} />Escolher Arquivo (CSV / Excel)</button>
             ) : (
               <div className="flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
                 <span className="text-sm font-bold truncate max-w-[200px]">{selectedFile.name}</span>
